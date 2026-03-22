@@ -69,14 +69,11 @@ async function computeOrderPricing(items, tenantId) {
   return { computedItems, subtotal: parseFloat(subtotal.toFixed(2)) };
 }
 
-/**
- * Compute tax and total
- */
-function computeTotals({ subtotal, discountAmount = 0, taxRate = 0 }) {
+
+function computeTotals({ subtotal, discountAmount = 0 }) {
   const afterDiscount = Math.max(0, subtotal - discountAmount);
-  const tax = parseFloat((afterDiscount * taxRate).toFixed(2));
-  const total = parseFloat((afterDiscount + tax).toFixed(2));
-  return { subtotal, discount: discountAmount, tax, total };
+  const total = parseFloat((afterDiscount).toFixed(2));
+  return { subtotal, discount: discountAmount, total };
 }
 
 module.exports = { computeOrderPricing, computeTotals };
