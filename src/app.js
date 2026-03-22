@@ -12,6 +12,12 @@ const logger = require('./utils/logger');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const { setupSocketIO } = require('./utils/socket');
 
+app.get('/', (req, res) => {
+  res.send("RestoApp API is running...");
+});
+
+app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
+
 // ── Routes ──────────────────────────────────────
 const authRoutes = require('./modules/auth/auth.routes');
 const tenantRoutes = require('./modules/tenants/tenant.routes');
