@@ -2,6 +2,7 @@
 const { prisma } = require('../../config/db');
 const { AppError } = require('../../middleware/errorHandler');
 
+// ─── Daily Sales ──────────────────────────────────────────────────────────────
 const dailySales = async (req, res, next) => {
   try {
     const { branchId } = req.params;
@@ -12,12 +13,22 @@ const dailySales = async (req, res, next) => {
 
     const [orders, itemsSold] = await Promise.all([
       prisma.order.findMany({
-        where: { branchId, tenantId: req.user.tenantId, paymentStatus: 'PAID', createdAt: { gte: start, lte: end } },
+        where: {
+          branchId,
+          tenantId: req.user.tenantId,
+          paymentStatus: 'PAID',
+          createdAt: { gte: start, lte: end },
+        },
         include: { items: true },
       }),
       prisma.orderItem.findMany({
         where: {
-          order: { branchId, tenantId: req.user.tenantId, paymentStatus: 'PAID', createdAt: { gte: start, lte: end } },
+          order: {
+            branchId,
+            tenantId: req.user.tenantId,
+            paymentStatus: 'PAID',
+            createdAt: { gte: start, lte: end },
+          },
         },
       }),
     ]);
@@ -42,7 +53,12 @@ const dailySales = async (req, res, next) => {
         totalOrders: orders.length,
         totalRevenue: totalRevenue.toFixed(2),
         totalDiscount: totalDiscount.toFixed(2),
-        breakdown: { cash: cashSales.toFixed(2), card: cardSales.toFixed(2), gcash: gcashSales.toFixed(2), maya: mayaSales.toFixed(2) },
+        breakdown: {
+          cash: cashSales.toFixed(2),
+          card: cardSales.toFixed(2),
+          gcash: gcashSales.toFixed(2),
+          maya: mayaSales.toFixed(2),
+        },
         averageOrderValue: orders.length ? (totalRevenue / orders.length).toFixed(2) : '0.00',
         totalItemsSold: itemsSold.reduce((s, i) => s + i.quantity, 0),
       },
@@ -50,6 +66,7 @@ const dailySales = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// ─── Sales Range ──────────────────────────────────────────────────────────────
 const salesRange = async (req, res, next) => {
   try {
     const { branchId } = req.params;
@@ -74,6 +91,7 @@ const salesRange = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// ─── Owner Dashboard ──────────────────────────────────────────────────────────
 const ownerDashboard = async (req, res, next) => {
   try {
     const { tenantId } = req.user;
@@ -84,7 +102,7 @@ const ownerDashboard = async (req, res, next) => {
 
     const branchStats = await Promise.all(
       branches.map(async (branch) => {
-        const [todayOrders, activeOrders, lowStock] = await Promise.all([
+        const [todayOrders, activeOrders, inventoryItems] = await Promise.all([
           prisma.order.aggregate({
             where: { branchId: branch.id, paymentStatus: 'PAID', createdAt: { gte: today, lte: todayEnd } },
             _sum: { total: true },
@@ -93,19 +111,17 @@ const ownerDashboard = async (req, res, next) => {
           prisma.order.count({
             where: { branchId: branch.id, status: { in: ['PENDING', 'CONFIRMED', 'PREPARING'] } },
           }),
-          // ── SQLite-compatible low stock count ──
-          prisma.inventory.count({
-            where: { branchId: branch.id, quantity: { lte: prisma.inventory.fields?.lowStockAt } },
-          }).catch(() =>
-            // Fallback: raw SQLite query if Prisma field reference fails
-            prisma.$queryRawUnsafe(
-              `SELECT COUNT(*) as count FROM Inventory WHERE branchId = ? AND quantity <= lowStockAt`,
-              branch.id
-            ).then((r) => parseInt(r[0]?.count || 0))
-          ),
+          // ── Low stock: fetch all inventory, filter in JS ──
+          // Prisma doesn't support field-to-field comparison in where clauses
+          prisma.inventory.findMany({
+            where: { branchId: branch.id },
+            select: { quantity: true, lowStockAt: true },
+          }),
         ]);
 
-        const lowStockCount = typeof lowStock === 'number' ? lowStock : parseInt(lowStock[0]?.count || 0);
+        const lowStockCount = inventoryItems.filter(
+          (i) => parseFloat(i.quantity) <= parseFloat(i.lowStockAt)
+        ).length;
 
         return {
           branchId: branch.id,
@@ -132,8 +148,7 @@ const ownerDashboard = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// ─── Top Items ─────────────────────────────────────────────────────────────────
-// Rewritten for SQLite — no ::int/::float casts, no double-quoted identifiers
+// ─── Top Items ────────────────────────────────────────────────────────────────
 const topItems = async (req, res, next) => {
   try {
     const { branchId } = req.params;
@@ -142,27 +157,34 @@ const topItems = async (req, res, next) => {
     const start = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const end = to ? new Date(to) : new Date();
 
-    const items = await prisma.$queryRawUnsafe(`
-      SELECT oi.menuItemId, oi.name,
-             CAST(SUM(oi.quantity) AS INTEGER) as totalQuantity,
-             CAST(SUM(oi.subtotal) AS REAL)    as totalRevenue
-      FROM OrderItem oi
-      JOIN \`Order\` o ON o.id = oi.orderId
-      WHERE o.branchId = ?
-        AND o.paymentStatus = 'PAID'
-        AND o.createdAt BETWEEN ? AND ?
-        AND oi.status != 'CANCELLED'
-      GROUP BY oi.menuItemId, oi.name
-      ORDER BY totalQuantity DESC
-      LIMIT ?
-    `, branchId, start.toISOString(), end.toISOString(), parseInt(limit));
+    const grouped = await prisma.orderItem.groupBy({
+      by: ['menuItemId', 'name'],
+      where: {
+        status: { not: 'CANCELLED' },
+        order: {
+          branchId,
+          paymentStatus: 'PAID',
+          createdAt: { gte: start, lte: end },
+        },
+      },
+      _sum: { quantity: true, subtotal: true },
+      orderBy: { _sum: { quantity: 'desc' } },
+      take: parseInt(limit),
+    });
+
+    const items = grouped.map((g) => ({
+      menuItemId: g.menuItemId,
+      name: g.name,
+      totalQuantity: g._sum.quantity || 0,
+      totalRevenue: g._sum.subtotal || 0,
+    }));
 
     res.json({ success: true, data: items });
   } catch (err) { next(err); }
 };
 
-// ─── Hourly Sales ──────────────────────────────────────────────────────────────
-// Rewritten for SQLite — strftime instead of EXTRACT, no ::int/::float casts
+// ─── Hourly Sales ─────────────────────────────────────────────────────────────
+// Pure Prisma — fetch paid orders, group by hour in JavaScript
 const hourlySales = async (req, res, next) => {
   try {
     const { branchId } = req.params;
@@ -171,17 +193,26 @@ const hourlySales = async (req, res, next) => {
     const start = new Date(date); start.setHours(0, 0, 0, 0);
     const end = new Date(date); end.setHours(23, 59, 59, 999);
 
-    const hourly = await prisma.$queryRawUnsafe(`
-      SELECT CAST(strftime('%H', createdAt) AS INTEGER) as hour,
-             CAST(COUNT(*) AS INTEGER)                  as orders,
-             CAST(SUM(total) AS REAL)                   as revenue
-      FROM \`Order\`
-      WHERE branchId = ?
-        AND paymentStatus = 'PAID'
-        AND createdAt BETWEEN ? AND ?
-      GROUP BY hour
-      ORDER BY hour
-    `, branchId, start.toISOString(), end.toISOString());
+    const orders = await prisma.order.findMany({
+      where: {
+        branchId,
+        paymentStatus: 'PAID',
+        createdAt: { gte: start, lte: end },
+      },
+      select: { createdAt: true, total: true },
+    });
+
+    // Group by hour in JS — works on any database
+    const hourMap = {};
+    for (const order of orders) {
+      const hour = new Date(order.createdAt).getHours();
+      if (!hourMap[hour]) hourMap[hour] = { hour, orders: 0, revenue: 0 };
+      hourMap[hour].orders += 1;
+      hourMap[hour].revenue += parseFloat(order.total);
+    }
+
+    // Fill all 24 hours (even empty ones)
+    const hourly = Array.from({ length: 24 }, (_, h) => hourMap[h] || { hour: h, orders: 0, revenue: 0 });
 
     res.json({ success: true, data: hourly });
   } catch (err) { next(err); }
