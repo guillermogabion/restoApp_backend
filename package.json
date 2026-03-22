@@ -10,7 +10,9 @@
     "db:generate": "prisma generate",
     "db:seed": "node prisma/seed.js",
     "db:studio": "prisma studio",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "postinstall": "prisma generate",
+    "build": "next build"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
