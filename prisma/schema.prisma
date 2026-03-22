@@ -1,13 +1,13 @@
 // prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
-  engineType    = "library"
 }
 
 datasource db {
- provider = "postgresql"
- url      = env("DATABASE_URL")
- directUrl = env("DIRECT_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // directUrl is used specifically for migrations or non-pooled connections
+  directUrl = env("DIRECT_URL")
 }
 
 // ─────────────────────────────────────────────
@@ -200,7 +200,6 @@ model Order {
   paymentMethod   String?
   subtotal        Float     @default(0)
   discount        Float     @default(0)
-  tax             Float     @default(0)
   total           Float     @default(0)
   notes           String?
   clientOrderId   String?
@@ -388,7 +387,6 @@ model SalesReport {
   totalOrders   Int      @default(0)
   totalRevenue  Float    @default(0)
   totalDiscount Float    @default(0)
-  totalTax      Float    @default(0)
   cashSales     Float    @default(0)
   cardSales     Float    @default(0)
   otherSales    Float    @default(0)
