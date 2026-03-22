@@ -28,7 +28,7 @@ const createOrder = async (req, res, next) => {
 
     // Apply discount (validated, not trusted from client)
     const discount = discountAmount > 0 ? parseFloat(discountAmount) : 0;
-    const { tax, total } = computeTotals({ subtotal, discountAmount: discount, taxRate: 0.12 });
+    const { total } = computeTotals({ subtotal, discountAmount: discount });
 
     const orderNumber = await generateOrderNumber(branchId);
 
@@ -46,7 +46,6 @@ const createOrder = async (req, res, next) => {
           paymentStatus: 'UNPAID',
           subtotal,
           discount,
-          tax,
           total,
           notes: notes || null,
           clientOrderId: clientOrderId || null,
@@ -120,7 +119,7 @@ const qrOrder = async (req, res, next) => {
     }
 
     const { computedItems, subtotal } = await computeOrderPricing(items, tenantId);
-    const { discount, tax, total } = computeTotals({ subtotal, discountAmount: 0, taxRate: 0.12 });
+    const { discount, total } = computeTotals({ subtotal, discountAmount: 0 });
     const orderNumber = await generateOrderNumber(branchId);
 
     const order = await prisma.order.create({
@@ -132,7 +131,7 @@ const qrOrder = async (req, res, next) => {
         orderType: 'QR_ORDER',
         status: 'PENDING',
         paymentStatus: 'UNPAID',
-        subtotal, discount, tax, total,
+        subtotal, discount, total,
         notes: notes || null,
         items: { create: computedItems },
       },
@@ -213,11 +212,11 @@ const updateStatus = async (req, res, next) => {
 
     // Role-based status transition rules
     const transitions = {
-      KITCHEN:  ['PREPARING', 'READY'],
-      WAITER:   ['SERVED'],
-      CASHIER:  ['CONFIRMED', 'COMPLETED', 'CANCELLED'],
-      MANAGER:  ['CONFIRMED', 'PREPARING', 'READY', 'SERVED', 'COMPLETED', 'CANCELLED'],
-      OWNER:    ['CONFIRMED', 'PREPARING', 'READY', 'SERVED', 'COMPLETED', 'CANCELLED'],
+      KITCHEN: ['PREPARING', 'READY'],
+      WAITER: ['SERVED'],
+      CASHIER: ['CONFIRMED', 'COMPLETED', 'CANCELLED'],
+      MANAGER: ['CONFIRMED', 'PREPARING', 'READY', 'SERVED', 'COMPLETED', 'CANCELLED'],
+      OWNER: ['CONFIRMED', 'PREPARING', 'READY', 'SERVED', 'COMPLETED', 'CANCELLED'],
     };
     const allowed = transitions[role] || [];
     if (!allowed.includes(status)) throw new AppError(`Role ${role} cannot set status to ${status}`, 403);

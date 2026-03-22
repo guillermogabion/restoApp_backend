@@ -24,7 +24,6 @@ const dailySales = async (req, res, next) => {
 
     const totalRevenue = orders.reduce((s, o) => s + parseFloat(o.total), 0);
     const totalDiscount = orders.reduce((s, o) => s + parseFloat(o.discount), 0);
-    const totalTax = orders.reduce((s, o) => s + parseFloat(o.tax), 0);
     const cashSales = orders.filter((o) => o.paymentMethod === 'CASH').reduce((s, o) => s + parseFloat(o.total), 0);
     const cardSales = orders.filter((o) => o.paymentMethod === 'CARD').reduce((s, o) => s + parseFloat(o.total), 0);
     const gcashSales = orders.filter((o) => o.paymentMethod === 'GCASH').reduce((s, o) => s + parseFloat(o.total), 0);
@@ -32,8 +31,8 @@ const dailySales = async (req, res, next) => {
 
     await prisma.salesReport.upsert({
       where: { branchId_date: { branchId, date: new Date(date) } },
-      create: { branchId, date: new Date(date), totalOrders: orders.length, totalRevenue, totalDiscount, totalTax, cashSales, cardSales },
-      update: { totalOrders: orders.length, totalRevenue, totalDiscount, totalTax, cashSales, cardSales, generatedAt: new Date() },
+      create: { branchId, date: new Date(date), totalOrders: orders.length, totalRevenue, totalDiscount, cashSales, cardSales },
+      update: { totalOrders: orders.length, totalRevenue, totalDiscount, cashSales, cardSales, generatedAt: new Date() },
     });
 
     res.json({
@@ -43,7 +42,6 @@ const dailySales = async (req, res, next) => {
         totalOrders: orders.length,
         totalRevenue: totalRevenue.toFixed(2),
         totalDiscount: totalDiscount.toFixed(2),
-        totalTax: totalTax.toFixed(2),
         breakdown: { cash: cashSales.toFixed(2), card: cardSales.toFixed(2), gcash: gcashSales.toFixed(2), maya: mayaSales.toFixed(2) },
         averageOrderValue: orders.length ? (totalRevenue / orders.length).toFixed(2) : '0.00',
         totalItemsSold: itemsSold.reduce((s, i) => s + i.quantity, 0),
@@ -70,8 +68,7 @@ const salesRange = async (req, res, next) => {
       revenue: acc.revenue + parseFloat(r.totalRevenue),
       orders: acc.orders + r.totalOrders,
       discount: acc.discount + parseFloat(r.totalDiscount),
-      tax: acc.tax + parseFloat(r.totalTax),
-    }), { revenue: 0, orders: 0, discount: 0, tax: 0 });
+    }), { revenue: 0, orders: 0, discount: 0 });
 
     res.json({ success: true, data: { reports, totals } });
   } catch (err) { next(err); }

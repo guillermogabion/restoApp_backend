@@ -11,10 +11,10 @@ const logger = require('../../utils/logger');
 function verifyHmac(payload, clientHmac) {
   const secret = process.env.SYNC_HMAC_SECRET;
   if (!secret) throw new Error('SYNC_HMAC_SECRET not configured');
-  
+
   // payload must already be a canonical string - don't stringify again
   const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  
+
   const computed = crypto
     .createHmac('sha256', secret)
     .update(data)
@@ -106,7 +106,7 @@ async function processOperation(op, context) {
 
       // Server always recomputes prices — client prices are ignored
       const { computedItems, subtotal } = await computeOrderPricing(items, tenantId);
-      const { discount, tax, total } = computeTotals({ subtotal, discountAmount: 0, taxRate: 0.12 });
+      const { discount, total } = computeTotals({ subtotal, discountAmount: 0 });
       const orderNumber = await generateOrderNumber(branchId);
 
       const order = await prisma.order.create({
@@ -118,7 +118,7 @@ async function processOperation(op, context) {
           orderType: orderType || 'DINE_IN',
           status: 'PENDING',
           paymentStatus: 'UNPAID',
-          subtotal, discount, tax, total,
+          subtotal, discount, total,
           notes: notes || null,
           clientOrderId: clientOrderId || null,
           syncedAt: new Date(),

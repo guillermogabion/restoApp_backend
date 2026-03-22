@@ -22,16 +22,15 @@ cron.schedule('55 23 * * *', async () => {
 
       if (!orders.length) continue;
 
-      const totalRevenue  = orders.reduce((s, o) => s + parseFloat(o.total), 0);
+      const totalRevenue = orders.reduce((s, o) => s + parseFloat(o.total), 0);
       const totalDiscount = orders.reduce((s, o) => s + parseFloat(o.discount), 0);
-      const totalTax      = orders.reduce((s, o) => s + parseFloat(o.tax), 0);
-      const cashSales     = orders.filter((o) => o.paymentMethod === 'CASH').reduce((s, o) => s + parseFloat(o.total), 0);
-      const cardSales     = orders.filter((o) => o.paymentMethod === 'CARD').reduce((s, o) => s + parseFloat(o.total), 0);
+      const cashSales = orders.filter((o) => o.paymentMethod === 'CASH').reduce((s, o) => s + parseFloat(o.total), 0);
+      const cardSales = orders.filter((o) => o.paymentMethod === 'CARD').reduce((s, o) => s + parseFloat(o.total), 0);
 
       await prisma.salesReport.upsert({
         where: { branchId_date: { branchId, date: today } },
-        create: { branchId, date: today, totalOrders: orders.length, totalRevenue, totalDiscount, totalTax, cashSales, cardSales },
-        update: { totalOrders: orders.length, totalRevenue, totalDiscount, totalTax, cashSales, cardSales, generatedAt: new Date() },
+        create: { branchId, date: today, totalOrders: orders.length, totalRevenue, totalDiscount, cashSales, cardSales },
+        update: { totalOrders: orders.length, totalRevenue, totalDiscount, cashSales, cardSales, generatedAt: new Date() },
       });
 
       logger.info(`[CRON] Sales report saved for branch ${branchId}: ₱${totalRevenue.toFixed(2)}`);
