@@ -1,0 +1,441 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// TENANT & BRANCH
+// ─────────────────────────────────────────────
+
+model Tenant {
+  id             String   @id @default(uuid())
+  name           String
+  slug           String   @unique
+  logoUrl        String?
+  isActive       Boolean  @default(true)
+  plan           String   @default("starter")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  branches       Branch[]
+  users          User[]
+  menuItems      MenuItem[]
+  categories     Category[]
+  tables         Table[]
+  loyaltyProgram LoyaltyProgram?
+}
+
+model Branch {
+  id            String   @id @default(uuid())
+  tenantId      String
+  name          String
+  address       String
+  phone         String?
+  isActive      Boolean  @default(true)
+  timezone      String   @default("Asia/Manila")
+  openTime      String   @default("08:00")
+  closeTime     String   @default("22:00")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  users         User[]
+  orders        Order[]
+  inventory     Inventory[]
+  tables        Table[]
+  salesReports  SalesReport[]
+  deliveryZones DeliveryZone[]
+
+  @@index([tenantId])
+}
+
+// ─────────────────────────────────────────────
+// USERS & AUTH
+// SQLite has no enums — role stored as String
+// ─────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(uuid())
+  tenantId     String
+  branchId     String?
+  name         String
+  email        String
+  phone        String?
+  passwordHash String
+  role         String    // OWNER | MANAGER | CASHIER | KITCHEN | WAITER | DELIVERY_RIDER
+  pin          String?
+  isActive     Boolean   @default(true)
+  lastLogin    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  branch        Branch?        @relation(fields: [branchId], references: [id])
+  orders        Order[]        @relation("CreatedByUser")
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId, branchId])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────
+// MENU
+// ─────────────────────────────────────────────
+
+model Category {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  imageUrl  String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  menuItems MenuItem[]
+
+  @@index([tenantId])
+}
+
+model MenuItem {
+  id          String   @id @default(uuid())
+  tenantId    String
+  categoryId  String
+  name        String
+  description String?
+  imageUrl    String?
+  basePrice   Float    @default(0)
+  isAvailable Boolean  @default(true)
+  isArchived  Boolean  @default(false)
+  trackStock  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  category       Category        @relation(fields: [categoryId], references: [id])
+  variants       MenuVariant[]
+  modifiers      MenuModifier[]
+  orderItems     OrderItem[]
+  inventoryLinks InventoryLink[]
+
+  @@index([tenantId, categoryId])
+}
+
+model MenuVariant {
+  id          String  @id @default(uuid())
+  menuItemId  String
+  name        String
+  priceAddon  Float   @default(0)
+  isAvailable Boolean @default(true)
+
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+}
+
+model MenuModifier {
+  id         String  @id @default(uuid())
+  menuItemId String
+  name       String
+  priceAddon Float   @default(0)
+  isRequired Boolean @default(false)
+
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+}
+
+// ─────────────────────────────────────────────
+// TABLES & QR
+// ─────────────────────────────────────────────
+
+model Table {
+  id          String   @id @default(uuid())
+  tenantId    String
+  branchId    String
+  tableNumber String
+  qrCode      String   @unique
+  capacity    Int      @default(4)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  branch  Branch  @relation(fields: [branchId], references: [id])
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  orders  Order[]
+
+  @@unique([branchId, tableNumber])
+  @@index([tenantId, branchId])
+}
+
+// ─────────────────────────────────────────────
+// ORDERS
+// All enum fields replaced with String
+// ─────────────────────────────────────────────
+
+model Order {
+  id              String    @id @default(uuid())
+  tenantId        String
+  branchId        String
+  orderNumber     String
+  tableId         String?
+  customerId      String?
+  createdByUserId String?
+  orderType       String    @default("DINE_IN")
+  status          String    @default("PENDING")
+  paymentStatus   String    @default("UNPAID")
+  paymentMethod   String?
+  subtotal        Float     @default(0)
+  discount        Float     @default(0)
+  tax             Float     @default(0)
+  total           Float     @default(0)
+  notes           String?
+  clientOrderId   String?
+  syncedAt        DateTime?
+  checksum        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  branch        Branch               @relation(fields: [branchId], references: [id])
+  table         Table?               @relation(fields: [tableId], references: [id])
+  createdBy     User?                @relation("CreatedByUser", fields: [createdByUserId], references: [id])
+  customer      Customer?            @relation(fields: [customerId], references: [id])
+  items         OrderItem[]
+  statusHistory OrderStatusHistory[]
+  delivery      DeliveryOrder?
+  loyaltyTx     LoyaltyTransaction?
+
+  @@unique([branchId, orderNumber])
+  @@unique([branchId, clientOrderId])
+  @@index([tenantId, branchId, status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id         String  @id @default(uuid())
+  orderId    String
+  menuItemId String
+  variantId  String?
+  name       String
+  unitPrice  Float   @default(0)
+  quantity   Int
+  subtotal   Float   @default(0)
+  modifiers  String? // JSON string: [{name, priceAddon}]
+  notes      String?
+  status     String  @default("PENDING")
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@index([orderId])
+}
+
+model OrderStatusHistory {
+  id        String   @id @default(uuid())
+  orderId   String
+  status    String
+  changedBy String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────
+// INVENTORY
+// ─────────────────────────────────────────────
+
+model Inventory {
+  id          String   @id @default(uuid())
+  branchId    String
+  name        String
+  unit        String
+  quantity    Float    @default(0)
+  lowStockAt  Float    @default(0)
+  costPerUnit Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  branch    Branch              @relation(fields: [branchId], references: [id])
+  movements InventoryMovement[]
+  links     InventoryLink[]
+
+  @@index([branchId])
+}
+
+model InventoryMovement {
+  id          String   @id @default(uuid())
+  inventoryId String
+  type        String   // IN | OUT | ADJUSTMENT | WASTE
+  quantity    Float
+  note        String?
+  referenceId String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  inventory Inventory @relation(fields: [inventoryId], references: [id])
+}
+
+model InventoryLink {
+  id           String @id @default(uuid())
+  menuItemId   String
+  inventoryId  String
+  quantityUsed Float
+
+  menuItem  MenuItem  @relation(fields: [menuItemId], references: [id])
+  inventory Inventory @relation(fields: [inventoryId], references: [id])
+}
+
+// ─────────────────────────────────────────────
+// DELIVERY
+// ─────────────────────────────────────────────
+
+model DeliveryZone {
+  id         String @id @default(uuid())
+  branchId   String
+  name       String
+  fee        Float
+  estMinutes Int    @default(30)
+
+  branch Branch          @relation(fields: [branchId], references: [id])
+  orders DeliveryOrder[]
+}
+
+model DeliveryOrder {
+  id          String    @id @default(uuid())
+  orderId     String    @unique
+  riderId     String?
+  zoneId      String?
+  address     String
+  lat         Float?
+  lng         Float?
+  status      String    @default("ASSIGNED") // ASSIGNED | PICKED_UP | IN_TRANSIT | DELIVERED | FAILED
+  deliveryFee Float     @default(0)
+  pickedUpAt  DateTime?
+  deliveredAt DateTime?
+  notes       String?
+
+  order Order         @relation(fields: [orderId], references: [id])
+  zone  DeliveryZone? @relation(fields: [zoneId], references: [id])
+}
+
+// ─────────────────────────────────────────────
+// CUSTOMERS & LOYALTY
+// ─────────────────────────────────────────────
+
+model Customer {
+  id         String   @id @default(uuid())
+  tenantId   String
+  name       String
+  phone      String
+  email      String?
+  points     Int      @default(0)
+  totalSpend Float    @default(0)
+  createdAt  DateTime @default(now())
+
+  orders    Order[]
+  loyaltyTx LoyaltyTransaction[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+model LoyaltyProgram {
+  id              String  @id @default(uuid())
+  tenantId        String  @unique
+  pointsPerPeso   Float   @default(1)
+  redemptionRate  Float   @default(100)
+  minRedeemPoints Int     @default(100)
+  isActive        Boolean @default(true)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+model LoyaltyTransaction {
+  id         String   @id @default(uuid())
+  customerId String
+  orderId    String?  @unique
+  points     Int
+  type       String   // EARN | REDEEM
+  note       String?
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id])
+  order    Order?   @relation(fields: [orderId], references: [id])
+}
+
+// ─────────────────────────────────────────────
+// SALES REPORTS
+// ─────────────────────────────────────────────
+
+model SalesReport {
+  id            String   @id @default(uuid())
+  branchId      String
+  date          DateTime // SQLite has no Date-only type, use DateTime
+  totalOrders   Int      @default(0)
+  totalRevenue  Float    @default(0)
+  totalDiscount Float    @default(0)
+  totalTax      Float    @default(0)
+  cashSales     Float    @default(0)
+  cardSales     Float    @default(0)
+  otherSales    Float    @default(0)
+  generatedAt   DateTime @default(now())
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@unique([branchId, date])
+  @@index([branchId])
+}
+
+// ─────────────────────────────────────────────
+// OFFLINE SYNC
+// ─────────────────────────────────────────────
+
+model SyncQueue {
+  id           String    @id @default(uuid())
+  tenantId     String
+  branchId     String
+  deviceId     String
+  payload      String    // JSON string (SQLite has no Json type)
+  checksum     String
+  status       String    @default("PENDING") // PENDING | APPLIED | REJECTED
+  rejectReason String?
+  receivedAt   DateTime  @default(now())
+  processedAt  DateTime?
+
+  @@index([tenantId, branchId, status])
+}
+
+// ─────────────────────────────────────────────
+// AUDIT LOG
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  branchId  String?
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  oldData   String?  // JSON string
+  newData   String?  // JSON string
+  ip        String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, entity])
+  @@index([createdAt])
+}
