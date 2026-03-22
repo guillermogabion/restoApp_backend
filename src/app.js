@@ -12,13 +12,39 @@ const logger = require('./utils/logger');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const { setupSocketIO } = require('./utils/socket');
 
+// ── Initialize App First ──────────────────────────
+const app = express();
+const httpServer = createServer(app);
+
+// ── Socket.IO (Conditional for Vercel) ────────────
+if (process.env.VERCEL !== '1') {
+  const io = new Server(httpServer, {
+    cors: { origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE'] },
+  });
+  setupSocketIO(io);
+  app.set('io', io);
+} else {
+  app.set('io', { emit: () => { } }); // Mock for Vercel
+}
+
+// ── Security & Global Middleware ──────────────────
+app.use(helmet());
+app.use(cors({ origin: '*' }));
+app.use(compression());
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// ── Logging ──────────────────────────────────────
+app.use(morgan('combined', { stream: { write: (msg) => logger.info(msg.trim()) } }));
+
+// ── Status Routes (Must be BEFORE API Routes) ─────
 app.get('/', (req, res) => {
   res.send("RestoApp API is running...");
 });
 
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
-// ── Routes ──────────────────────────────────────
+// ── API Routes ───────────────────────────────────
 const authRoutes = require('./modules/auth/auth.routes');
 const tenantRoutes = require('./modules/tenants/tenant.routes');
 const branchRoutes = require('./modules/branches/branch.routes');
@@ -33,43 +59,6 @@ const loyaltyRoutes = require('./modules/loyalty/loyalty.routes');
 const syncRoutes = require('./modules/sync/sync.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
 
-const app = express();
-const httpServer = createServer(app);
-
-// ── Socket.IO ────────────────────────────────────
-const io = new Server(httpServer, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
-});
-setupSocketIO(io);
-app.set('io', io);
-
-// ── Security Middleware ──────────────────────────
-app.use(helmet());
-app.use(cors({ origin: '*' })); // tighten in production
-app.use(compression());
-
-// ── Rate Limiting ────────────────────────────────
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000'),
-  max: parseInt(process.env.RATE_LIMIT_MAX || '100'),
-  message: { error: 'Too many requests, please slow down.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api/', limiter);
-
-// ── Body Parsing ─────────────────────────────────
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static(process.env.UPLOAD_DIR || './uploads'));
-
-// ── Logging ──────────────────────────────────────
-app.use(morgan('combined', { stream: { write: (msg) => logger.info(msg.trim()) } }));
-
-// ── Health Check ─────────────────────────────────
-app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
-
-// ── API Routes ───────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/tenants', tenantRoutes);
 app.use('/api/branches', branchRoutes);
@@ -84,7 +73,7 @@ app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api', adminRoutes);
 
-// ── Error Handlers ───────────────────────────────
+// ── Error Handlers (Must be LAST) ────────────────
 app.use(notFoundHandler);
 app.use(errorHandler);
 
