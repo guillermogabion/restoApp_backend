@@ -8,11 +8,8 @@
     "start": "node src/server.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
-    "db:seed": "node prisma/seed.js",
-    "db:studio": "prisma studio",
-    "lint": "eslint src/",
     "postinstall": "prisma generate",
-    "build": "next build"
+    "build": "prisma generate"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
@@ -39,10 +36,7 @@
     "qrcode": "^1.5.3",
     "socket.io": "^4.7.5",
     "uuid": "^10.0.0",
-    "winston": "^3.13.0",
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest"
+    "winston": "^3.13.0"
   },
   "devDependencies": {
     "eslint": "^9.4.0",
