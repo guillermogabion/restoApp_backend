@@ -181,7 +181,7 @@ const updateItem = async (req, res, next) => {
     });
     if (!item) throw new AppError('Menu item not found', 404);
 
-    const { name, description, imageUrl, basePrice, isAvailable, trackStock, categoryId } = req.body;
+    const { name, description, imageUrl, basePrice, isAvailable, trackStock, categoryId, variants, modifiers } = req.body;
     const data = {};
     if (name !== undefined) data.name = name;
     if (description !== undefined) data.description = description;
@@ -191,7 +191,22 @@ const updateItem = async (req, res, next) => {
     if (trackStock !== undefined) data.trackStock = trackStock;
     if (categoryId !== undefined) data.categoryId = categoryId;
 
-    // Delete old Cloudinary image if replacing with a new one
+    // Replace variants if provided — delete all then recreate
+    if (variants !== undefined) {
+      data.variants = {
+        deleteMany: {},           // delete all existing
+        create: variants,         // recreate from payload
+      };
+    }
+
+    // Replace modifiers if provided — delete all then recreate
+    if (modifiers !== undefined) {
+      data.modifiers = {
+        deleteMany: {},
+        create: modifiers,
+      };
+    }
+
     if (imageUrl && imageUrl !== item.imageUrl && item.imageUrl) {
       await deleteCloudinaryImage(item.imageUrl);
     }
