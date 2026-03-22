@@ -1,52 +1,58 @@
 // src/modules/orders/order.controller.js
+const Pusher = require('pusher');
 const { prisma } = require('../../config/db');
 const { computeOrderPricing, computeTotals } = require('../../utils/pricing');
 const { AppError } = require('../../middleware/errorHandler');
-const { emitToKitchen, emitToBranch } = require('../../utils/socket');
 const { generateOrderNumber } = require('../../utils/helpers');
 
-// ─── Create Order ────────────────────────────────────────────────────────────
+// ─── Pusher instance ──────────────────────────────────────────────────────────
+const pusher = new Pusher({
+  appId: process.env.PUSHER_APP_ID,
+  key: process.env.PUSHER_KEY,
+  secret: process.env.PUSHER_SECRET,
+  cluster: process.env.PUSHER_CLUSTER,
+  useTLS: true,
+});
+
+const emit = (channel, event, data) =>
+  pusher.trigger(channel, event, data).catch((e) =>
+    console.warn(`Pusher [${channel}/${event}]:`, e.message)
+  );
+
+// ─── Create Order ─────────────────────────────────────────────────────────────
 const createOrder = async (req, res, next) => {
   try {
     const { tenantId, branchId, userId } = req.user;
     const { tableId, orderType, items, notes, customerId, clientOrderId, discountAmount } = req.body;
 
-    // Dedup check for offline sync
     if (clientOrderId) {
-      const existing = await prisma.order.findUnique({ where: { branchId_clientOrderId: { branchId, clientOrderId } } });
+      const existing = await prisma.order.findUnique({
+        where: { branchId_clientOrderId: { branchId, clientOrderId } },
+      });
       if (existing) return res.json({ success: true, data: existing, duplicate: true });
     }
 
-    // Validate table belongs to this branch
     if (tableId) {
       const table = await prisma.table.findFirst({ where: { id: tableId, branchId, isActive: true } });
       if (!table) throw new AppError('Table not found in this branch', 404);
     }
 
-    // SERVER always computes prices - client price is ignored
     const { computedItems, subtotal } = await computeOrderPricing(items, tenantId);
-
-    // Apply discount (validated, not trusted from client)
     const discount = discountAmount > 0 ? parseFloat(discountAmount) : 0;
     const { total } = computeTotals({ subtotal, discountAmount: discount });
-
     const orderNumber = await generateOrderNumber(branchId);
 
     const order = await prisma.$transaction(async (tx) => {
       const newOrder = await tx.order.create({
         data: {
-          tenantId,
-          branchId,
-          orderNumber,
+          tenantId, branchId, orderNumber,
           tableId: tableId || null,
           customerId: customerId || null,
           createdByUserId: userId,
           orderType: orderType || 'DINE_IN',
           status: 'PENDING',
           paymentStatus: 'UNPAID',
-          subtotal,
-          discount,
-          total,
+          subtotal, discount, total,
           notes: notes || null,
           clientOrderId: clientOrderId || null,
           syncedAt: clientOrderId ? new Date() : null,
@@ -55,12 +61,10 @@ const createOrder = async (req, res, next) => {
         include: { items: true, table: true },
       });
 
-      // Log status history
       await tx.orderStatusHistory.create({
         data: { orderId: newOrder.id, status: 'PENDING', changedBy: userId },
       });
 
-      // Deduct inventory if applicable
       for (const item of computedItems) {
         const links = await tx.inventoryLink.findMany({ where: { menuItemId: item.menuItemId } });
         for (const link of links) {
@@ -84,10 +88,10 @@ const createOrder = async (req, res, next) => {
       return newOrder;
     });
 
-    // Real-time: push new order to kitchen display
-    const io = req.app.get('io');
-    emitToKitchen(io, branchId, 'order:new', { orderId: order.id, orderNumber, items: computedItems, orderType });
-    emitToBranch(io, branchId, 'order:created', { orderId: order.id, orderNumber, total });
+    await Promise.all([
+      emit(`kitchen-${branchId}`, 'order:new', { orderId: order.id, orderNumber, items: computedItems, orderType }),
+      emit(`branch-${branchId}`, 'order:created', { orderId: order.id, orderNumber, total }),
+    ]);
 
     res.status(201).json({ success: true, data: order });
   } catch (err) {
@@ -95,7 +99,7 @@ const createOrder = async (req, res, next) => {
   }
 };
 
-// ─── QR Customer Self-Order ──────────────────────────────────────────────────
+// ─── QR Customer Self-Order ───────────────────────────────────────────────────
 const qrOrder = async (req, res, next) => {
   try {
     const { qrCode, items, notes, customerName, customerPhone } = req.body;
@@ -108,7 +112,6 @@ const qrOrder = async (req, res, next) => {
 
     const { tenantId, branchId } = table;
 
-    // Find or create customer
     let customer = null;
     if (customerPhone) {
       customer = await prisma.customer.upsert({
@@ -124,8 +127,7 @@ const qrOrder = async (req, res, next) => {
 
     const order = await prisma.order.create({
       data: {
-        tenantId, branchId,
-        orderNumber,
+        tenantId, branchId, orderNumber,
         tableId: table.id,
         customerId: customer?.id || null,
         orderType: 'QR_ORDER',
@@ -138,8 +140,10 @@ const qrOrder = async (req, res, next) => {
       include: { items: true },
     });
 
-    const io = req.app.get('io');
-    emitToKitchen(io, branchId, 'order:new', { orderId: order.id, orderNumber, items: computedItems, orderType: 'QR_ORDER', tableId: table.id });
+    await emit(`kitchen-${branchId}`, 'order:new', {
+      orderId: order.id, orderNumber,
+      items: computedItems, orderType: 'QR_ORDER', tableId: table.id,
+    });
 
     res.status(201).json({ success: true, data: { orderId: order.id, orderNumber, total } });
   } catch (err) {
@@ -147,7 +151,7 @@ const qrOrder = async (req, res, next) => {
   }
 };
 
-// ─── List Orders ─────────────────────────────────────────────────────────────
+// ─── List Orders ──────────────────────────────────────────────────────────────
 const listOrders = async (req, res, next) => {
   try {
     const { branchId } = req.params;
@@ -165,7 +169,11 @@ const listOrders = async (req, res, next) => {
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
         where,
-        include: { items: true, table: { select: { tableNumber: true } }, createdBy: { select: { name: true } } },
+        include: {
+          items: true,
+          table: { select: { tableNumber: true } },
+          createdBy: { select: { name: true } },
+        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: parseInt(limit),
@@ -205,12 +213,11 @@ const updateStatus = async (req, res, next) => {
   try {
     const { orderId } = req.params;
     const { status, note } = req.body;
-    const { userId, tenantId, branchId, role } = req.user;
+    const { userId, tenantId, role } = req.user;
 
     const order = await prisma.order.findFirst({ where: { id: orderId, tenantId } });
     if (!order) throw new AppError('Order not found', 404);
 
-    // Role-based status transition rules
     const transitions = {
       KITCHEN: ['PREPARING', 'READY'],
       WAITER: ['SERVED'],
@@ -232,11 +239,9 @@ const updateStatus = async (req, res, next) => {
       return upd;
     });
 
-    const io = req.app.get('io');
-    emitToBranch(io, order.branchId, 'order:status', { orderId, status, orderNumber: order.orderNumber });
-
+    await emit(`branch-${order.branchId}`, 'order:status', { orderId, status, orderNumber: order.orderNumber });
     if (['PREPARING', 'READY'].includes(status)) {
-      emitToKitchen(io, order.branchId, 'order:status', { orderId, status, orderNumber: order.orderNumber });
+      await emit(`kitchen-${order.branchId}`, 'order:status', { orderId, status, orderNumber: order.orderNumber });
     }
 
     res.json({ success: true, data: updated });
@@ -262,7 +267,6 @@ const processPayment = async (req, res, next) => {
     let finalTotal = parseFloat(order.total);
     let loyaltyDiscount = 0;
 
-    // Apply loyalty points redemption (server validates)
     if (loyaltyPointsRedeem && order.customerId && order.customer) {
       const program = await prisma.loyaltyProgram.findUnique({ where: { tenantId } });
       if (program?.isActive) {
@@ -292,30 +296,29 @@ const processPayment = async (req, res, next) => {
         data: { orderId, status: 'COMPLETED', changedBy: userId, note: `Payment: ${paymentMethod}` },
       });
 
-      // Earn loyalty points
       if (order.customerId) {
         const program = await tx.loyaltyProgram.findUnique({ where: { tenantId } });
         if (program?.isActive) {
           const earnedPoints = Math.floor(finalTotal * program.pointsPerPeso);
           const netPoints = earnedPoints - (loyaltyPointsRedeem || 0);
-
           await tx.customer.update({
             where: { id: order.customerId },
-            data: {
-              points: { increment: netPoints },
-              totalSpend: { increment: finalTotal },
-            },
+            data: { points: { increment: netPoints }, totalSpend: { increment: finalTotal } },
           });
-
           await tx.loyaltyTransaction.create({
-            data: { customerId: order.customerId, orderId, points: netPoints, type: netPoints >= 0 ? 'EARN' : 'REDEEM' },
+            data: {
+              customerId: order.customerId, orderId,
+              points: netPoints,
+              type: netPoints >= 0 ? 'EARN' : 'REDEEM',
+            },
           });
         }
       }
     });
 
-    const io = req.app.get('io');
-    emitToBranch(io, order.branchId, 'order:paid', { orderId, orderNumber: order.orderNumber, total: finalTotal });
+    await emit(`branch-${order.branchId}`, 'order:paid', {
+      orderId, orderNumber: order.orderNumber, total: finalTotal,
+    });
 
     res.json({ success: true, data: { orderId, total: finalTotal, change, paymentMethod } });
   } catch (err) {
@@ -332,7 +335,8 @@ const cancelOrder = async (req, res, next) => {
 
     const order = await prisma.order.findFirst({ where: { id: orderId, tenantId } });
     if (!order) throw new AppError('Order not found', 404);
-    if (['COMPLETED', 'CANCELLED'].includes(order.status)) throw new AppError('Cannot cancel this order', 400);
+    if (['COMPLETED', 'CANCELLED'].includes(order.status))
+      throw new AppError('Cannot cancel this order', 400);
 
     await prisma.$transaction(async (tx) => {
       await tx.order.update({ where: { id: orderId }, data: { status: 'CANCELLED' } });
@@ -340,18 +344,27 @@ const cancelOrder = async (req, res, next) => {
         data: { orderId, status: 'CANCELLED', changedBy: userId, note: reason || 'Cancelled by staff' },
       });
 
-      // Reverse inventory deductions
-      const movements = await tx.inventoryMovement.findMany({ where: { referenceId: orderId, type: 'OUT' } });
+      const movements = await tx.inventoryMovement.findMany({
+        where: { referenceId: orderId, type: 'OUT' },
+      });
       for (const m of movements) {
-        await tx.inventory.update({ where: { id: m.inventoryId }, data: { quantity: { increment: m.quantity } } });
+        await tx.inventory.update({
+          where: { id: m.inventoryId },
+          data: { quantity: { increment: m.quantity } },
+        });
         await tx.inventoryMovement.create({
-          data: { inventoryId: m.inventoryId, type: 'IN', quantity: m.quantity, referenceId: orderId, note: 'Order cancelled reversal', createdBy: userId },
+          data: {
+            inventoryId: m.inventoryId, type: 'IN',
+            quantity: m.quantity, referenceId: orderId,
+            note: 'Order cancelled reversal', createdBy: userId,
+          },
         });
       }
     });
 
-    const io = req.app.get('io');
-    emitToBranch(io, order.branchId, 'order:cancelled', { orderId, orderNumber: order.orderNumber, reason });
+    await emit(`branch-${order.branchId}`, 'order:cancelled', {
+      orderId, orderNumber: order.orderNumber, reason,
+    });
 
     res.json({ success: true, message: 'Order cancelled' });
   } catch (err) {
@@ -369,19 +382,16 @@ const updateItemStatus = async (req, res, next) => {
     const order = await prisma.order.findFirst({ where: { id: orderId, tenantId } });
     if (!order) throw new AppError('Order not found', 404);
 
-    const item = await prisma.orderItem.update({
-      where: { id: itemId },
-      data: { status },
-    });
+    const item = await prisma.orderItem.update({ where: { id: itemId }, data: { status } });
 
-    // Check if all items are DONE -> auto update order to READY
     const allItems = await prisma.orderItem.findMany({ where: { orderId } });
     const allDone = allItems.every((i) => i.status === 'DONE' || i.status === 'CANCELLED');
 
     if (allDone) {
       await prisma.order.update({ where: { id: orderId }, data: { status: 'READY' } });
-      const io = req.app.get('io');
-      emitToBranch(io, order.branchId, 'order:status', { orderId, status: 'READY', orderNumber: order.orderNumber });
+      await emit(`branch-${order.branchId}`, 'order:status', {
+        orderId, status: 'READY', orderNumber: order.orderNumber,
+      });
     }
 
     res.json({ success: true, data: item });
@@ -390,4 +400,7 @@ const updateItemStatus = async (req, res, next) => {
   }
 };
 
-module.exports = { createOrder, qrOrder, listOrders, getOrder, updateStatus, processPayment, cancelOrder, updateItemStatus };
+module.exports = {
+  createOrder, qrOrder, listOrders, getOrder,
+  updateStatus, processPayment, cancelOrder, updateItemStatus,
+};

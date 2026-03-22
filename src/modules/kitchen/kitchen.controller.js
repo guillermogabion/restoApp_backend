@@ -1,9 +1,25 @@
 // src/modules/kitchen/kitchen.controller.js
+const Pusher = require('pusher');
 const { prisma } = require('../../config/db');
 const { AppError } = require('../../middleware/errorHandler');
-const { emitToBranch, emitToKitchen } = require('../../utils/socket');
 
-// Live orders for KDS - only active ones
+// ─── Pusher instance ──────────────────────────────────────────────────────────
+const pusher = new Pusher({
+  appId: process.env.PUSHER_APP_ID,
+  key: process.env.PUSHER_KEY,
+  secret: process.env.PUSHER_SECRET,
+  cluster: process.env.PUSHER_CLUSTER,
+  useTLS: true,
+});
+
+// Helper — replaces emitToBranch / emitToKitchen
+const emit = (channel, event, data) => {
+  return pusher.trigger(channel, event, data).catch((e) =>
+    console.warn(`Pusher emit failed [${channel}/${event}]:`, e.message)
+  );
+};
+
+// ─── Live orders for KDS ──────────────────────────────────────────────────────
 const getKitchenDisplay = async (req, res, next) => {
   try {
     const { branchId } = req.params;
@@ -25,10 +41,11 @@ const getKitchenDisplay = async (req, res, next) => {
       orderBy: { createdAt: 'asc' },
     });
 
-    // Annotate each order with elapsed time in seconds for the KDS timer
     const annotated = orders.map((o) => ({
       ...o,
-      elapsedSeconds: Math.floor((Date.now() - new Date(o.createdAt).getTime()) / 1000),
+      elapsedSeconds: Math.floor(
+        (Date.now() - new Date(o.createdAt).getTime()) / 1000
+      ),
     }));
 
     res.json({ success: true, data: annotated });
@@ -37,6 +54,7 @@ const getKitchenDisplay = async (req, res, next) => {
   }
 };
 
+// ─── Bump single item ─────────────────────────────────────────────────────────
 const bumpItem = async (req, res, next) => {
   try {
     const { orderId, itemId } = req.params;
@@ -47,7 +65,7 @@ const bumpItem = async (req, res, next) => {
 
     await prisma.orderItem.update({ where: { id: itemId }, data: { status: 'DONE' } });
 
-    // Check if all items are done -> auto-ready
+    // Auto-ready if all items done
     const remaining = await prisma.orderItem.count({
       where: { orderId, status: { notIn: ['DONE', 'CANCELLED'] } },
     });
@@ -55,10 +73,18 @@ const bumpItem = async (req, res, next) => {
     if (remaining === 0) {
       await prisma.order.update({ where: { id: orderId }, data: { status: 'READY' } });
       await prisma.orderStatusHistory.create({
-        data: { orderId, status: 'READY', changedBy: userId, note: 'All items done — auto bumped' },
+        data: {
+          orderId, status: 'READY',
+          changedBy: userId,
+          note: 'All items done — auto bumped',
+        },
       });
-      const io = req.app.get('io');
-      emitToBranch(io, order.branchId, 'order:status', { orderId, status: 'READY', orderNumber: order.orderNumber });
+      // Notify branch channel
+      await emit(`branch-${order.branchId}`, 'order:status', {
+        orderId,
+        status: 'READY',
+        orderNumber: order.orderNumber,
+      });
     }
 
     res.json({ success: true, message: 'Item bumped' });
@@ -67,6 +93,7 @@ const bumpItem = async (req, res, next) => {
   }
 };
 
+// ─── Bump entire order ────────────────────────────────────────────────────────
 const bumpOrder = async (req, res, next) => {
   try {
     const { orderId } = req.params;
@@ -76,16 +103,29 @@ const bumpOrder = async (req, res, next) => {
     if (!order) throw new AppError('Order not found', 404);
 
     await prisma.$transaction([
-      prisma.orderItem.updateMany({ where: { orderId, status: 'PREPARING' }, data: { status: 'DONE' } }),
+      prisma.orderItem.updateMany({
+        where: { orderId, status: 'PREPARING' },
+        data: { status: 'DONE' },
+      }),
       prisma.order.update({ where: { id: orderId }, data: { status: 'READY' } }),
       prisma.orderStatusHistory.create({
-        data: { orderId, status: 'READY', changedBy: userId, note: 'Bumped from KDS' },
+        data: {
+          orderId, status: 'READY',
+          changedBy: userId,
+          note: 'Bumped from KDS',
+        },
       }),
     ]);
 
-    const io = req.app.get('io');
-    emitToBranch(io, order.branchId, 'order:status', { orderId, status: 'READY', orderNumber: order.orderNumber });
-    emitToKitchen(io, order.branchId, 'order:bumped', { orderId });
+    // Notify branch + kitchen channels
+    await Promise.all([
+      emit(`branch-${order.branchId}`, 'order:status', {
+        orderId,
+        status: 'READY',
+        orderNumber: order.orderNumber,
+      }),
+      emit(`kitchen-${order.branchId}`, 'order:bumped', { orderId }),
+    ]);
 
     res.json({ success: true, message: 'Order bumped to READY' });
   } catch (err) {
