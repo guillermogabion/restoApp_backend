@@ -23,7 +23,7 @@ const logger = winston.createLogger({
 });
 
 // ONLY add file logging if we are NOT on Vercel
-if (process.env.VERCEL !== '1') {
+if (process.env.VERCEL !== '1' && process.env.NODE_ENV !== 'production') {
   logger.add(
     new winston.transports.File({
       filename: 'logs/error.log',
