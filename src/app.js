@@ -12,11 +12,12 @@ const logger = require('./utils/logger');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const { setupSocketIO } = require('./utils/socket');
 
-// ── Initialize App First ──────────────────────────
+// 1. INITIALIZE APP FIRST (Fixes the ReferenceError)
 const app = express();
 const httpServer = createServer(app);
 
-// ── Socket.IO (Conditional for Vercel) ────────────
+// 2. SOCKET.IO (Conditional for Vercel)
+// Vercel Serverless doesn't support WebSockets; this prevents the 500 crash.
 if (process.env.VERCEL !== '1') {
   const io = new Server(httpServer, {
     cors: { origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE'] },
@@ -24,27 +25,28 @@ if (process.env.VERCEL !== '1') {
   setupSocketIO(io);
   app.set('io', io);
 } else {
-  app.set('io', { emit: () => { } }); // Mock for Vercel
+  // Mock 'io' so your routes calling app.get('io') don't break
+  app.set('io', { emit: () => { } });
 }
 
-// ── Security & Global Middleware ──────────────────
+// 3. GLOBAL MIDDLEWARE
 app.use(helmet());
 app.use(cors({ origin: '*' }));
 app.use(compression());
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ── Logging ──────────────────────────────────────
+// 4. LOGGING
 app.use(morgan('combined', { stream: { write: (msg) => logger.info(msg.trim()) } }));
 
-// ── Status Routes (Must be BEFORE API Routes) ─────
+// 5. STATUS ROUTES (Moved up so they work correctly)
 app.get('/', (req, res) => {
   res.send("RestoApp API is running...");
 });
 
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
-// ── API Routes ───────────────────────────────────
+// 6. API ROUTES
 const authRoutes = require('./modules/auth/auth.routes');
 const tenantRoutes = require('./modules/tenants/tenant.routes');
 const branchRoutes = require('./modules/branches/branch.routes');
@@ -73,7 +75,7 @@ app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api', adminRoutes);
 
-// ── Error Handlers (Must be LAST) ────────────────
+// 7. ERROR HANDLERS (Must be last)
 app.use(notFoundHandler);
 app.use(errorHandler);
 
