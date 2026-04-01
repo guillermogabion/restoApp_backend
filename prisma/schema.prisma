@@ -7,7 +7,6 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   // directUrl is used specifically for migrations or non-pooled connections
-  directUrl = env("DIRECT_URL")
 }
 
 // ─────────────────────────────────────────────
@@ -52,7 +51,7 @@ model Branch {
   tables        Table[]
   salesReports  SalesReport[]
   deliveryZones DeliveryZone[]
-
+  reservations Reservation[]
   @@index([tenantId])
 }
 
@@ -135,6 +134,7 @@ model MenuItem {
   modifiers      MenuModifier[]
   orderItems     OrderItem[]
   inventoryLinks InventoryLink[]
+  reservationItems ReservationItem[]
 
   @@index([tenantId, categoryId])
 }
@@ -176,7 +176,7 @@ model Table {
   branch  Branch  @relation(fields: [branchId], references: [id])
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
   orders  Order[]
-
+  reservations Reservation[]
   @@unique([branchId, tableNumber])
   @@index([tenantId, branchId])
 }
@@ -438,4 +438,53 @@ model AuditLog {
 
   @@index([tenantId, entity])
   @@index([createdAt])
+}
+
+
+model Reservation {
+  id            String   @id @default(uuid())
+  tenantId      String
+  branchId      String
+  type          String   @default("TABLE")       // TABLE | CATERING
+  status        String   @default("PENDING")     // PENDING | CONFIRMED | CANCELLED | COMPLETED
+  customerName  String
+  customerPhone String
+  customerEmail String?
+  guestCount    Int      @default(1)
+  date          DateTime
+  startTime     String                           // e.g. "18:00"
+  endTime       String?                          // e.g. "21:00"
+  tableId       String?
+  notes         String?
+  // Catering-specific
+  venue         String?                          // delivery address for catering
+  totalAmount   Float    @default(0)
+  depositAmount Float    @default(0)
+  isPaid        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  branch  Branch             @relation(fields: [branchId], references: [id])
+  table   Table?             @relation(fields: [tableId], references: [id])
+  items   ReservationItem[]
+
+  @@index([tenantId, branchId])
+  @@index([date])
+}
+
+model ReservationItem {
+  id            String  @id @default(uuid())
+  reservationId String
+  menuItemId    String
+  name          String
+  quantity      Int     @default(1)
+  unitPrice     Float   @default(0)
+  subtotal      Float   @default(0)
+  notes         String?
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  menuItem    MenuItem    @relation(fields: [menuItemId], references: [id])
+
+ @@index([reservationId])
+  @@index([menuItemId])
 }

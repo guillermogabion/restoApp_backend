@@ -141,7 +141,6 @@ CREATE TABLE "Order" (
     "paymentMethod" TEXT,
     "subtotal" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "discount" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "tax" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "total" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "notes" TEXT,
     "clientOrderId" TEXT,
@@ -297,7 +296,6 @@ CREATE TABLE "SalesReport" (
     "totalOrders" INTEGER NOT NULL DEFAULT 0,
     "totalRevenue" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "totalDiscount" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "totalTax" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "cashSales" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "cardSales" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "otherSales" DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -337,6 +335,46 @@ CREATE TABLE "AuditLog" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Reservation" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "branchId" TEXT NOT NULL,
+    "type" TEXT NOT NULL DEFAULT 'TABLE',
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "customerName" TEXT NOT NULL,
+    "customerPhone" TEXT NOT NULL,
+    "customerEmail" TEXT,
+    "guestCount" INTEGER NOT NULL DEFAULT 1,
+    "date" TIMESTAMP(3) NOT NULL,
+    "startTime" TEXT NOT NULL,
+    "endTime" TEXT,
+    "tableId" TEXT,
+    "notes" TEXT,
+    "venue" TEXT,
+    "totalAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "depositAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "isPaid" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Reservation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ReservationItem" (
+    "id" TEXT NOT NULL,
+    "reservationId" TEXT NOT NULL,
+    "menuItemId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL DEFAULT 1,
+    "unitPrice" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "subtotal" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "notes" TEXT,
+
+    CONSTRAINT "ReservationItem_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -416,6 +454,18 @@ CREATE INDEX "AuditLog_tenantId_entity_idx" ON "AuditLog"("tenantId", "entity");
 
 -- CreateIndex
 CREATE INDEX "AuditLog_createdAt_idx" ON "AuditLog"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "Reservation_tenantId_branchId_idx" ON "Reservation"("tenantId", "branchId");
+
+-- CreateIndex
+CREATE INDEX "Reservation_date_idx" ON "Reservation"("date");
+
+-- CreateIndex
+CREATE INDEX "ReservationItem_reservationId_idx" ON "ReservationItem"("reservationId");
+
+-- CreateIndex
+CREATE INDEX "ReservationItem_menuItemId_idx" ON "ReservationItem"("menuItemId");
 
 -- AddForeignKey
 ALTER TABLE "Branch" ADD CONSTRAINT "Branch_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -506,3 +556,15 @@ ALTER TABLE "SalesReport" ADD CONSTRAINT "SalesReport_branchId_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Reservation" ADD CONSTRAINT "Reservation_branchId_fkey" FOREIGN KEY ("branchId") REFERENCES "Branch"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Reservation" ADD CONSTRAINT "Reservation_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "Table"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReservationItem" ADD CONSTRAINT "ReservationItem_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "Reservation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReservationItem" ADD CONSTRAINT "ReservationItem_menuItemId_fkey" FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

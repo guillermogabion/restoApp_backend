@@ -134,7 +134,6 @@ CREATE TABLE "Order" (
     "paymentMethod" TEXT,
     "subtotal" REAL NOT NULL DEFAULT 0,
     "discount" REAL NOT NULL DEFAULT 0,
-    "tax" REAL NOT NULL DEFAULT 0,
     "total" REAL NOT NULL DEFAULT 0,
     "notes" TEXT,
     "clientOrderId" TEXT,
@@ -285,7 +284,6 @@ CREATE TABLE "SalesReport" (
     "totalOrders" INTEGER NOT NULL DEFAULT 0,
     "totalRevenue" REAL NOT NULL DEFAULT 0,
     "totalDiscount" REAL NOT NULL DEFAULT 0,
-    "totalTax" REAL NOT NULL DEFAULT 0,
     "cashSales" REAL NOT NULL DEFAULT 0,
     "cardSales" REAL NOT NULL DEFAULT 0,
     "otherSales" REAL NOT NULL DEFAULT 0,
@@ -321,6 +319,50 @@ CREATE TABLE "AuditLog" (
     "ip" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "AuditLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "Reservation" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "tenantId" TEXT NOT NULL,
+    "branchId" TEXT NOT NULL,
+    "type" TEXT NOT NULL DEFAULT 'TABLE',
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "customerName" TEXT NOT NULL,
+    "customerPhone" TEXT NOT NULL,
+    "customerEmail" TEXT,
+    "guestCount" INTEGER NOT NULL DEFAULT 1,
+    "date" DATETIME NOT NULL,
+    "startTime" TEXT NOT NULL,
+    "endTime" TEXT,
+    "tableId" TEXT,
+    "notes" TEXT,
+    "venue" TEXT,
+    "totalAmount" REAL NOT NULL DEFAULT 0,
+    "depositAmount" REAL NOT NULL DEFAULT 0,
+    "isPaid" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "Reservation_branchId_fkey" FOREIGN KEY ("branchId") REFERENCES "Branch" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "Reservation_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "Table" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "ReservationItem" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "reservationId" TEXT NOT NULL,
+    "menuItemId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL DEFAULT 1,
+    "unitPrice" REAL NOT NULL DEFAULT 0,
+    "subtotal" REAL NOT NULL DEFAULT 0,
+    "notes" TEXT,
+    "branchId" TEXT NOT NULL,
+    "tableId" TEXT NOT NULL,
+    CONSTRAINT "ReservationItem_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "Reservation" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "ReservationItem_menuItemId_fkey" FOREIGN KEY ("menuItemId") REFERENCES "MenuItem" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "ReservationItem_branchId_fkey" FOREIGN KEY ("branchId") REFERENCES "Branch" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "ReservationItem_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "Table" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 -- CreateIndex
@@ -400,3 +442,15 @@ CREATE INDEX "AuditLog_tenantId_entity_idx" ON "AuditLog"("tenantId", "entity");
 
 -- CreateIndex
 CREATE INDEX "AuditLog_createdAt_idx" ON "AuditLog"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "Reservation_tenantId_branchId_idx" ON "Reservation"("tenantId", "branchId");
+
+-- CreateIndex
+CREATE INDEX "Reservation_date_idx" ON "Reservation"("date");
+
+-- CreateIndex
+CREATE INDEX "ReservationItem_branchId_idx" ON "ReservationItem"("branchId");
+
+-- CreateIndex
+CREATE INDEX "ReservationItem_tableId_idx" ON "ReservationItem"("tableId");
