@@ -60,6 +60,7 @@ const deliveryRoutes = require('./modules/delivery/delivery.routes');
 const loyaltyRoutes = require('./modules/loyalty/loyalty.routes');
 const syncRoutes = require('./modules/sync/sync.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
+const reservationRoutes = require('./modules/reservations/reservation.routes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/tenants', tenantRoutes);
@@ -74,6 +75,7 @@ app.use('/api/delivery', deliveryRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api', adminRoutes);
+app.use('/api/reservations', reservationRoutes);
 
 // 7. ERROR HANDLERS (Must be last)
 app.use(notFoundHandler);
