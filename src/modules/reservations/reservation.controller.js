@@ -2,57 +2,6 @@
 const { prisma } = require('../../config/db');
 const { AppError } = require('../../middleware/errorHandler');
 
-// ─── Transform Reservation to Frontend Format ──────────────────────────────────
-const transformReservation = (reservation) => {
-    return {
-        id: reservation.id,
-        guestName: reservation.customerName,
-        guestCount: reservation.guestCount,
-        reservationDate: reservation.date.toISOString().split('T')[0], // Format as YYYY-MM-DD
-        reservationTime: reservation.startTime,
-        status: reservation.status,
-        guestPhone: reservation.customerPhone,
-        notes: reservation.notes || null,
-    };
-};
-
-// ─── List Reservations for User's Branch (Simplified) ────────────────────────
-const listReservationsForBranch = async (req, res, next) => {
-    try {
-        const { branchId, tenantId } = req.user;
-        const { status, type, date, from, to } = req.query;
-
-        if (!branchId) throw new AppError('Branch information not found in user context', 400);
-
-        const where = { branchId, tenantId };
-        if (status) where.status = status;
-        if (type) where.type = type;
-
-        if (date) {
-            const start = new Date(date); start.setHours(0, 0, 0, 0);
-            const end = new Date(date); end.setHours(23, 59, 59, 999);
-            where.date = { gte: start, lte: end };
-        } else if (from || to) {
-            where.date = {};
-            if (from) where.date.gte = new Date(from);
-            if (to) where.date.lte = new Date(to);
-        }
-
-        const reservations = await prisma.reservation.findMany({
-            where,
-            include: {
-                items: { include: { menuItem: { select: { name: true, imageUrl: true } } } },
-                table: { select: { tableNumber: true } },
-            },
-            orderBy: { date: 'asc' },
-        });
-
-        // Transform data to frontend format
-        const transformedData = reservations.map(transformReservation);
-        res.json({ success: true, data: transformedData });
-    } catch (err) { next(err); }
-};
-
 // ─── List Reservations ────────────────────────────────────────────────────────
 const listReservations = async (req, res, next) => {
     try {
@@ -82,9 +31,7 @@ const listReservations = async (req, res, next) => {
             orderBy: { date: 'asc' },
         });
 
-        // Transform data to frontend format
-        const transformedData = reservations.map(transformReservation);
-        res.json({ success: true, data: transformedData });
+        res.json({ success: true, data: reservations });
     } catch (err) { next(err); }
 };
 
@@ -99,9 +46,7 @@ const getReservation = async (req, res, next) => {
             },
         });
         if (!reservation) throw new AppError('Reservation not found', 404);
-
-        const transformedData = transformReservation(reservation);
-        res.json({ success: true, data: transformedData });
+        res.json({ success: true, data: reservation });
     } catch (err) { next(err); }
 };
 
@@ -175,8 +120,7 @@ const createReservation = async (req, res, next) => {
             },
         });
 
-        const transformedData = transformReservation(reservation);
-        res.status(201).json({ success: true, data: transformedData });
+        res.status(201).json({ success: true, data: reservation });
     } catch (err) { next(err); }
 };
 
@@ -233,8 +177,7 @@ const updateReservation = async (req, res, next) => {
             include: { items: true, table: { select: { tableNumber: true } } },
         });
 
-        const transformedData = transformReservation(updated);
-        res.json({ success: true, data: transformedData });
+        res.json({ success: true, data: updated });
     } catch (err) { next(err); }
 };
 
@@ -292,6 +235,6 @@ const deleteReservation = async (req, res, next) => {
 };
 
 module.exports = {
-    transformReservation, listReservationsForBranch, listReservations, getReservation, createReservation,
+    listReservations, getReservation, createReservation,
     updateReservation, updateStatus, markPaid, deleteReservation,
 };
