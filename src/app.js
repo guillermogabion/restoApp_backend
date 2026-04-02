@@ -44,8 +44,6 @@ app.get('/', (req, res) => {
   res.send("RestoApp API is running...");
 });
 
-app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
-
 // 6. API ROUTES
 const authRoutes = require('./modules/auth/auth.routes');
 const tenantRoutes = require('./modules/tenants/tenant.routes');
@@ -61,6 +59,7 @@ const loyaltyRoutes = require('./modules/loyalty/loyalty.routes');
 const syncRoutes = require('./modules/sync/sync.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
 const reservationRoutes = require('./modules/reservations/reservation.routes');
+const healthRoutes = require('./modules/health/health.routes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/tenants', tenantRoutes);
@@ -76,6 +75,7 @@ app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api', adminRoutes);
 app.use('/api/reservations', reservationRoutes);
+app.use('/api/health', healthRoutes);
 
 // 7. ERROR HANDLERS (Must be last)
 app.use(notFoundHandler);

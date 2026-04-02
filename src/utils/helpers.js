@@ -9,15 +9,38 @@ async function generateOrderNumber(branchId) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const count = await prisma.order.count({
+  const lastOrder = await prisma.order.findFirst({
     where: {
       branchId,
       createdAt: { gte: today },
     },
+    orderBy: { createdAt: 'desc' },
+    select: { orderNumber: true },
   });
 
-  const num = (count + 1).toString().padStart(4, '0');
+  let nextNumber = 1;
+  if (lastOrder?.orderNumber) {
+    const parsed = parseInt(lastOrder.orderNumber.replace(/\D/g, ''), 10);
+    if (!Number.isNaN(parsed)) nextNumber = parsed + 1;
+  }
+
+  const num = nextNumber.toString().padStart(4, '0');
   return `#${num}`;
+}
+
+async function generateUniqueOrderNumber(branchId, maxRetries = 10) {
+  let orderNumber = await generateOrderNumber(branchId);
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const exists = await prisma.order.findFirst({ where: { branchId, orderNumber } });
+    if (!exists) return orderNumber;
+
+    // If candidate already exists (race / out-of-order data), increment and retry.
+    const numeric = parseInt(orderNumber.replace(/\D/g, ''), 10);
+    const next = Number.isNaN(numeric) ? attempt + 1 : numeric + 1;
+    orderNumber = `#${next.toString().padStart(4, '0')}`;
+  }
+  throw new Error('Unable to generate a unique order number after multiple attempts');
 }
 
 /**
@@ -37,4 +60,4 @@ function sanitizeUser(user) {
   return safe;
 }
 
-module.exports = { generateOrderNumber, paginate, sanitizeUser };
+module.exports = { generateOrderNumber, generateUniqueOrderNumber, paginate, sanitizeUser };

@@ -16,6 +16,14 @@ router.post('/',
   ctrl.createOrder
 );
 
+// Validate order inventory availability
+router.post('/validate-inventory',
+  authorize('OWNER', 'MANAGER', 'CASHIER', 'WAITER'),
+  enforceBranch,
+  validate(schema.validateInventory),
+  ctrl.validateOrderInventory
+);
+
 // QR customer self-order (public - no auth needed, uses QR token)
 router.post('/qr',
   validate(schema.qrOrder),

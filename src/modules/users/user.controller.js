@@ -2,6 +2,7 @@
 const bcrypt = require('bcryptjs');
 const { prisma } = require('../../config/db');
 const { AppError } = require('../../middleware/errorHandler');
+const { invalidateUserCache } = require('../../middleware/auth');
 
 const list = async (req, res, next) => {
   try {
@@ -84,6 +85,9 @@ const update = async (req, res, next) => {
       select: { id: true, name: true, email: true, role: true, branchId: true, isActive: true },
     });
 
+    // Invalidate auth cache for this user
+    invalidateUserCache(req.params.id);
+
     res.json({ success: true, data: updated });
   } catch (err) { next(err); }
 };
@@ -98,6 +102,9 @@ const deactivate = async (req, res, next) => {
     // Revoke all refresh tokens
     await prisma.refreshToken.deleteMany({ where: { userId: req.params.id } });
 
+    // Invalidate auth cache for this user
+    invalidateUserCache(req.params.id);
+
     res.json({ success: true, message: 'User deactivated' });
   } catch (err) { next(err); }
 };
@@ -110,6 +117,10 @@ const resetPin = async (req, res, next) => {
 
     const hashed = await bcrypt.hash(pin, 10);
     await prisma.user.update({ where: { id: req.params.id }, data: { pin: hashed } });
+
+    // Invalidate auth cache for this user
+    invalidateUserCache(req.params.id);
+
     res.json({ success: true, message: 'PIN updated' });
   } catch (err) { next(err); }
 };

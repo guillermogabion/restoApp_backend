@@ -7,24 +7,26 @@ const schema = require('./inventory.validators');
 
 router.use(authenticate);
 
-router.get('/branch/:branchId',
+// 1. Specific/Static paths FIRST
+router.get('/low-stock/:branchId',
   authorize('OWNER', 'MANAGER'),
   enforceBranch,
-  ctrl.list
+  ctrl.getLowStock
 );
 
-router.post('/',
-  authorize('OWNER', 'MANAGER'),
-  validate(schema.create),
-  ctrl.create
+router.get('/dashboard/:branchId',
+  authorize('OWNER', 'MANAGER', 'CASHIER'),
+  enforceBranch,
+  ctrl.getDashboard
 );
 
-router.patch('/:id',
-  authorize('OWNER', 'MANAGER'),
-  validate(schema.update),
-  ctrl.update
+router.get('/realtime/:branchId',
+  authorize('OWNER', 'MANAGER', 'CASHIER'),
+  enforceBranch,
+  ctrl.getRealTimeStatus
 );
 
+// 2. Movement routes (contain static 'movements' or 'movement' words)
 router.post('/:id/movement',
   authorize('OWNER', 'MANAGER'),
   validate(schema.movement),
@@ -36,10 +38,24 @@ router.get('/:id/movements',
   ctrl.getMovements
 );
 
-router.get('/low-stock/:branchId',
+// 3. Generic Parameters LAST
+router.get('/:branchId', // This acts as the "fallback" for a GET with an ID
   authorize('OWNER', 'MANAGER'),
   enforceBranch,
-  ctrl.getLowStock
+  ctrl.list
+);
+
+router.patch('/:id',
+  authorize('OWNER', 'MANAGER'),
+  validate(schema.update),
+  ctrl.update
+);
+
+// 4. Base POST (already correct)
+router.post('/',
+  authorize('OWNER', 'MANAGER'),
+  validate(schema.create),
+  ctrl.create
 );
 
 module.exports = router;
