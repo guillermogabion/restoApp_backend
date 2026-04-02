@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { prisma } = require('../../config/db');
 const { AppError } = require('../../middleware/errorHandler');
 const { computeOrderPricing, computeTotals } = require('../../utils/pricing');
-const { generateOrderNumber } = require('../../utils/helpers');
+const { generateOrderNumber, generateUniqueOrderNumber } = require('../../utils/helpers');
 const logger = require('../../utils/logger');
 
 // ─── HMAC Verification ────────────────────────────────────────────────────────
@@ -107,24 +107,40 @@ async function processOperation(op, context) {
       // Server always recomputes prices — client prices are ignored
       const { computedItems, subtotal } = await computeOrderPricing(items, tenantId);
       const { discount, total } = computeTotals({ subtotal, discountAmount: 0 });
-      const orderNumber = await generateOrderNumber(branchId);
 
-      const order = await prisma.order.create({
-        data: {
-          tenantId, branchId, orderNumber,
-          tableId: tableId || null,
-          customerId: customerId || null,
-          createdByUserId: userId,
-          orderType: orderType || 'DINE_IN',
-          status: 'PENDING',
-          paymentStatus: 'UNPAID',
-          subtotal, discount, total,
-          notes: notes || null,
-          clientOrderId: clientOrderId || null,
-          syncedAt: new Date(),
-          items: { create: computedItems },
-        },
-      });
+      let order;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const orderNumber = await generateUniqueOrderNumber(branchId);
+        try {
+          order = await prisma.order.create({
+            data: {
+              tenantId, branchId, orderNumber,
+              tableId: tableId || null,
+              customerId: customerId || null,
+              createdByUserId: userId,
+              orderType: orderType || 'DINE_IN',
+              status: 'PENDING',
+              paymentStatus: 'UNPAID',
+              subtotal, discount, total,
+              notes: notes || null,
+              clientOrderId: clientOrderId || null,
+              syncedAt: new Date(),
+              items: { create: computedItems },
+            },
+          });
+          break;
+        } catch (err) {
+          if (err.code === 'P2002' && err.meta && Array.isArray(err.meta.target) && err.meta.target.includes('orderNumber')) {
+            if (attempt === 4) throw new AppError('Could not create order due to repeated order number conflicts. Please try again.', 500);
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      if (!order) {
+        throw new AppError('Unable to create order after several retries', 500);
+      }
 
       await prisma.orderStatusHistory.create({
         data: { orderId: order.id, status: 'PENDING', changedBy: userId, note: 'Created via offline sync' },

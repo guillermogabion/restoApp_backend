@@ -27,6 +27,11 @@ function setupSocketIO(io) {
     // Kitchen staff joins kitchen room
     if (role === 'KITCHEN') socket.join(`kitchen:${branchId}`);
 
+    // Management roles join inventory monitoring room
+    if (['OWNER', 'MANAGER', 'CASHIER'].includes(role)) {
+      socket.join(`inventory:${branchId}`);
+    }
+
     // Delivery rider joins their room
     if (role === 'DELIVERY_RIDER') {
       socket.join(`rider:${socket.user.userId}`);
@@ -53,4 +58,12 @@ const emitToBranch = (io, branchId, event, data) => {
   io.to(`branch:${branchId}`).emit(event, data);
 };
 
-module.exports = { setupSocketIO, emitToKitchen, emitToBranch };
+const emitToInventory = (io, branchId, event, data) => {
+  io.to(`inventory:${branchId}`).emit(event, data);
+};
+
+const emitToTenant = (io, tenantId, event, data) => {
+  io.to(`tenant:${tenantId}`).emit(event, data);
+};
+
+module.exports = { setupSocketIO, emitToKitchen, emitToBranch, emitToInventory, emitToTenant };

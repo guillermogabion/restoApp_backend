@@ -36,12 +36,12 @@ async function main() {
   const hash = (pw) => bcrypt.hashSync(pw, 12);
 
   const usersData = [
-    { name: 'Owner Admin',   email: 'owner@demo.com',    password: 'Password123!', role: 'OWNER',          pin: '1111' },
-    { name: 'Branch Manager',email: 'manager@demo.com',  password: 'Password123!', role: 'MANAGER',        pin: '2222' },
-    { name: 'Cashier One',   email: 'cashier@demo.com',  password: 'Password123!', role: 'CASHIER',        pin: '3333' },
-    { name: 'Kitchen Staff', email: 'kitchen@demo.com',  password: 'Password123!', role: 'KITCHEN',        pin: '4444' },
-    { name: 'Waiter One',    email: 'waiter@demo.com',   password: 'Password123!', role: 'WAITER',         pin: '5555' },
-    { name: 'Rider One',     email: 'rider@demo.com',    password: 'Password123!', role: 'DELIVERY_RIDER', pin: '6666' },
+    { name: 'Owner Admin', email: 'owner@demo.com', password: 'Password123!', role: 'OWNER', pin: '1111' },
+    { name: 'Branch Manager', email: 'manager@demo.com', password: 'Password123!', role: 'MANAGER', pin: '2222' },
+    { name: 'Cashier One', email: 'cashier@demo.com', password: 'Password123!', role: 'CASHIER', pin: '3333' },
+    { name: 'Kitchen Staff', email: 'kitchen@demo.com', password: 'Password123!', role: 'KITCHEN', pin: '4444' },
+    { name: 'Waiter One', email: 'waiter@demo.com', password: 'Password123!', role: 'WAITER', pin: '5555' },
+    { name: 'Rider One', email: 'rider@demo.com', password: 'Password123!', role: 'DELIVERY_RIDER', pin: '6666' },
   ];
 
   for (const u of usersData) {
@@ -61,32 +61,32 @@ async function main() {
 
   // ── Categories ────────────────────────────────────────────────────────────
   const categories = ['Meals', 'Snacks', 'Beverages', 'Desserts'];
-    const createdCats = {};
-    for (let i = 0; i < categories.length; i++) {
-      let cat = await prisma.category.findFirst({
-        where: { tenantId: tenant.id, name: categories[i] },
+  const createdCats = {};
+  for (let i = 0; i < categories.length; i++) {
+    let cat = await prisma.category.findFirst({
+      where: { tenantId: tenant.id, name: categories[i] },
+    });
+    if (!cat) {
+      cat = await prisma.category.create({
+        data: { tenantId: tenant.id, name: categories[i], sortOrder: i },
       });
-      if (!cat) {
-        cat = await prisma.category.create({
-          data: { tenantId: tenant.id, name: categories[i], sortOrder: i },
-        });
-      }
-      createdCats[categories[i]] = cat.id;
     }
+    createdCats[categories[i]] = cat.id;
+  }
 
   // ── Menu Items ────────────────────────────────────────────────────────────
   const menuItems = [
-    { name: 'Chicken Inasal',    category: 'Meals',     price: 189 },
-    { name: 'Pork Sinigang',     category: 'Meals',     price: 215 },
-    { name: 'Beef Kare-Kare',    category: 'Meals',     price: 245 },
-    { name: 'Crispy Pata',       category: 'Meals',     price: 499 },
-    { name: 'Lumpia Shanghai',   category: 'Snacks',    price: 89  },
-    { name: 'Calamari',          category: 'Snacks',    price: 125 },
-    { name: 'Halo-Halo',         category: 'Desserts',  price: 99  },
-    { name: 'Leche Flan',        category: 'Desserts',  price: 75  },
-    { name: 'Iced Tea',          category: 'Beverages', price: 55  },
-    { name: 'Soft Drinks',       category: 'Beverages', price: 45  },
-    { name: 'Fresh Buko Juice',  category: 'Beverages', price: 65  },
+    { name: 'Chicken Inasal', category: 'Meals', price: 189 },
+    { name: 'Pork Sinigang', category: 'Meals', price: 215 },
+    { name: 'Beef Kare-Kare', category: 'Meals', price: 245 },
+    { name: 'Crispy Pata', category: 'Meals', price: 499 },
+    { name: 'Lumpia Shanghai', category: 'Snacks', price: 89 },
+    { name: 'Calamari', category: 'Snacks', price: 125 },
+    { name: 'Halo-Halo', category: 'Desserts', price: 99 },
+    { name: 'Leche Flan', category: 'Desserts', price: 75 },
+    { name: 'Iced Tea', category: 'Beverages', price: 55 },
+    { name: 'Soft Drinks', category: 'Beverages', price: 45 },
+    { name: 'Fresh Buko Juice', category: 'Beverages', price: 65 },
   ];
 
   for (const m of menuItems) {
@@ -101,6 +101,7 @@ async function main() {
           name: m.name,
           basePrice: m.price,
           isAvailable: true,
+          branchId: branch.id,
         },
       });
     }
@@ -141,11 +142,11 @@ async function main() {
 
   // ── Basic Inventory ───────────────────────────────────────────────────────
   const inventoryItems = [
-    { name: 'Rice',        unit: 'kg',  qty: 50,   low: 10  },
-    { name: 'Chicken',     unit: 'kg',  qty: 20,   low: 5   },
-    { name: 'Pork',        unit: 'kg',  qty: 15,   low: 5   },
-    { name: 'Cooking Oil', unit: 'L',   qty: 10,   low: 2   },
-    { name: 'Soft Drinks', unit: 'pcs', qty: 100,  low: 20  },
+    { name: 'Rice', unit: 'kg', qty: 50, low: 10 },
+    { name: 'Chicken', unit: 'kg', qty: 20, low: 5 },
+    { name: 'Pork', unit: 'kg', qty: 15, low: 5 },
+    { name: 'Cooking Oil', unit: 'L', qty: 10, low: 2 },
+    { name: 'Soft Drinks', unit: 'pcs', qty: 100, low: 20 },
   ];
 
   for (const inv of inventoryItems) {
@@ -174,4 +175,4 @@ async function main() {
 main()
   .catch((e) => { console.error(e); process.exit(1); })
   .finally(() => prisma.$disconnect());
-  console.log(`   (use this for PIN login)`);
+console.log(`   (use this for PIN login)`);
