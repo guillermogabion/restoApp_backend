@@ -52,6 +52,7 @@ model Branch {
   salesReports  SalesReport[]
   deliveryZones DeliveryZone[]
   reservations Reservation[]
+  menuItems MenuItem[]
   @@index([tenantId])
 }
 
@@ -118,6 +119,7 @@ model MenuItem {
   id          String   @id @default(uuid())
   tenantId    String
   categoryId  String
+  branchId  String
   name        String
   description String?
   imageUrl    String?
@@ -128,15 +130,52 @@ model MenuItem {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  branch         Branch          @relation(fields: [branchId], references: [id])
   tenant         Tenant          @relation(fields: [tenantId], references: [id])
   category       Category        @relation(fields: [categoryId], references: [id])
   variants       MenuVariant[]
   modifiers      MenuModifier[]
   orderItems     OrderItem[]
-  inventoryLinks InventoryLink[]
+  inventoryLinks InventoryLink[] // Keep for backward compatibility
+  recipes        Recipe[]        // New: recipes for this menu item
   reservationItems ReservationItem[]
 
-  @@index([tenantId, categoryId])
+  @@index([tenantId, categoryId, branchId])
+}
+
+// ─────────────────────────────────────────────
+// RECIPES & INGREDIENTS
+// ─────────────────────────────────────────────
+
+model Recipe {
+  id          String   @id @default(uuid())
+  menuItemId  String
+  name        String   // e.g., "Classic Cheeseburger Recipe"
+  description String?
+  servings    Int      @default(1) // how many portions this recipe makes
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  menuItem  MenuItem         @relation(fields: [menuItemId], references: [id])
+  ingredients RecipeIngredient[]
+
+  @@index([menuItemId])
+}
+
+model RecipeIngredient {
+  id           String  @id @default(uuid())
+  recipeId     String
+  inventoryId  String
+  quantityUsed Float   // amount needed per serving
+  unit         String? // override inventory unit if needed
+  notes        String?
+
+  recipe    Recipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  inventory Inventory @relation(fields: [inventoryId], references: [id])
+
+  @@index([recipeId])
+  @@index([inventoryId])
 }
 
 model MenuVariant {
@@ -271,6 +310,7 @@ model Inventory {
   branch    Branch              @relation(fields: [branchId], references: [id])
   movements InventoryMovement[]
   links     InventoryLink[]
+  recipeIngredients RecipeIngredient[] // New: ingredients that use this inventory
 
   @@index([branchId])
 }
@@ -293,7 +333,7 @@ model InventoryLink {
   menuItemId   String
   inventoryId  String
   quantityUsed Float
-
+  unit         String? 
   menuItem  MenuItem  @relation(fields: [menuItemId], references: [id])
   inventory Inventory @relation(fields: [inventoryId], references: [id])
 }
