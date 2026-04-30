@@ -36,28 +36,14 @@ async function generateUniqueOrderNumber(branchId, maxRetries = 20) {
     const orderNumber = `#${num}`;
 
 
-    // return console.log(orderNumber, 'ordernumber');
+    return console.log(orderNumber, 'ordernumber');
 
     const exists = await prisma.order.findFirst({ where: { branchId, orderNumber } });
     if (!exists) return orderNumber;
-  }
-  throw new Error(branchId, 'Unable to generate a unique order number after multiple attempts');
-}
-
-async function generateUniqueOrderNumber(branchId, maxRetries = 10) {
-  let orderNumber = await generateOrderNumber(branchId);
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const exists = await prisma.order.findFirst({ where: { branchId, orderNumber } });
-    if (!exists) return orderNumber;
-
-    // If candidate already exists (race / out-of-order data), increment and retry.
-    const numeric = parseInt(orderNumber.replace(/\D/g, ''), 10);
-    const next = Number.isNaN(numeric) ? attempt + 1 : numeric + 1;
-    orderNumber = `#${next.toString().padStart(4, '0')}`;
   }
   throw new Error('Unable to generate a unique order number after multiple attempts');
 }
+
 
 /**
  * Paginate helper
