@@ -9,23 +9,36 @@ async function generateOrderNumber(branchId) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const lastOrder = await prisma.order.findFirst({
+  // Count today's orders + 1 instead of parsing the last order number
+  // This is more reliable under concurrent requests
+  const count = await prisma.order.count({
     where: {
       branchId,
       createdAt: { gte: today },
     },
-    orderBy: { createdAt: 'desc' },
-    select: { orderNumber: true },
   });
 
-  let nextNumber = 1;
-  if (lastOrder?.orderNumber) {
-    const parsed = parseInt(lastOrder.orderNumber.replace(/\D/g, ''), 10);
-    if (!Number.isNaN(parsed)) nextNumber = parsed + 1;
-  }
-
-  const num = nextNumber.toString().padStart(4, '0');
+  const num = (count + 1).toString().padStart(4, '0');
   return `#${num}`;
+}
+
+async function generateUniqueOrderNumber(branchId, maxRetries = 20) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const count = await prisma.order.count({
+      where: { branchId, createdAt: { gte: today } },
+    });
+
+    // Offset by attempt to avoid repeated collisions
+    const num = (count + attempt).toString().padStart(4, '0');
+    const orderNumber = `#${num}`;
+
+    const exists = await prisma.order.findFirst({ where: { branchId, orderNumber } });
+    if (!exists) return orderNumber;
+  }
+  throw new Error('Unable to generate a unique order number after multiple attempts');
 }
 
 async function generateUniqueOrderNumber(branchId, maxRetries = 10) {
