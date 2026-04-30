@@ -35,6 +35,9 @@ async function generateUniqueOrderNumber(branchId, maxRetries = 20) {
     const num = (count + attempt).toString().padStart(4, '0');
     const orderNumber = `#${num}`;
 
+
+    return console.log(orderNumber, 'ordernumber');
+
     const exists = await prisma.order.findFirst({ where: { branchId, orderNumber } });
     if (!exists) return orderNumber;
   }
